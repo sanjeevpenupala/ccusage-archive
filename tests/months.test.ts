@@ -13,27 +13,27 @@ describe('formatMonth', () => {
 
 describe('getMonthRange', () => {
   it('returns months from retention start through last completed month', () => {
-    const range = getMonthRange(new Date('2025-03-15'));
+    const range = getMonthRange(new Date(2025, 2, 15));
     expect(range).toContain('2025-02');
     expect(range).not.toContain('2025-03');
   });
 
   it('includes completed months spanning a year boundary', () => {
-    const range = getMonthRange(new Date('2025-01-05'));
+    const range = getMonthRange(new Date(2025, 0, 5));
     expect(range).toContain('2024-12');
   });
 
   it('returns multiple months when retention window spans them', () => {
-    const range = getMonthRange(new Date('2025-03-01'));
+    const range = getMonthRange(new Date(2025, 2, 1));
     expect(range).toContain('2025-01');
     expect(range).toContain('2025-02');
   });
 
   it('excludes a month when retention window starts after it ends', () => {
-    const range = getMonthRange(new Date('2025-03-02'));
+    const range = getMonthRange(new Date(2025, 2, 2));
     expect(range).toContain('2025-01');
 
-    const range2 = getMonthRange(new Date('2025-03-03'));
+    const range2 = getMonthRange(new Date(2025, 2, 3));
     expect(range2).not.toContain('2025-01');
     expect(range2).toContain('2025-02');
   });

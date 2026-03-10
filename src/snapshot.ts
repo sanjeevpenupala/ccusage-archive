@@ -79,7 +79,10 @@ export async function captureMonth(
 
   try {
     fs.mkdirSync(dataDir, { recursive: true });
-    fs.writeFileSync(path.join(dataDir, `${month}.json`), result.stdout, 'utf-8');
+    const finalPath = path.join(dataDir, `${month}.json`);
+    const tmpPath = `${finalPath}.tmp`;
+    fs.writeFileSync(tmpPath, result.stdout, 'utf-8');
+    fs.renameSync(tmpPath, finalPath);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return { success: false, month, reason: `Failed to write snapshot: ${message}` };

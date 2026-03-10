@@ -6,15 +6,15 @@ export function formatMonth(year: number, month: number): string {
 
 export function getMonthRange(now: Date): string[] {
   const retentionStart = new Date(now);
-  retentionStart.setUTCDate(retentionStart.getUTCDate() - RETENTION_DAYS);
+  retentionStart.setDate(retentionStart.getDate() - RETENTION_DAYS);
 
   // Last completed month is the month before the current one
-  const nowUTCMonth = now.getUTCMonth(); // 0-indexed
-  const lastCompletedYear = nowUTCMonth === 0 ? now.getUTCFullYear() - 1 : now.getUTCFullYear();
-  const lastCompletedMonth = nowUTCMonth === 0 ? 12 : nowUTCMonth; // 1-indexed
+  const nowMonth = now.getMonth(); // 0-indexed
+  const lastCompletedYear = nowMonth === 0 ? now.getFullYear() - 1 : now.getFullYear();
+  const lastCompletedMonth = nowMonth === 0 ? 12 : nowMonth; // 1-indexed
 
-  const startYear = retentionStart.getUTCFullYear();
-  const startMonth = retentionStart.getUTCMonth() + 1; // 1-indexed
+  const startYear = retentionStart.getFullYear();
+  const startMonth = retentionStart.getMonth() + 1; // 1-indexed
 
   const months: string[] = [];
   let year = startYear;
