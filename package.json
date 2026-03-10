@@ -1,0 +1,28 @@
+{
+  "name": "ccusage-archive",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Persist Claude Code usage data beyond the 30-day retention limit",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "test": "vitest run",
+    "check": "biome check --write",
+    "check:ci": "biome ci",
+    "typecheck": "tsc --noEmit"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.6",
+    "@commitlint/cli": "^20.4.3",
+    "@commitlint/config-conventional": "^20.4.3",
+    "@types/node": "^25.4.0",
+    "lefthook": "^2.1.3",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}
