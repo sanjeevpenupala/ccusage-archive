@@ -1,0 +1,24 @@
+commit-msg:
+  commands:
+    commitlint:
+      run: npx commitlint --edit {1}
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: lint and format
+      run: npx biome check --write --files-ignore-unknown=true --no-errors-on-unmatched {staged_files}
+      stage_fixed: true
+    - name: typecheck
+      run: npx tsc --noEmit
+
+pre-push:
+  jobs:
+    - name: no-direct-push
+      only:
+        - ref: main
+      run: echo "Blocked. Direct pushes to main are not allowed. Open a PR instead." && exit 1
+    - name: validate-branch-name
+      run: bash scripts/validate-branch-name.sh
+    - name: test
+      run: npx vitest run
