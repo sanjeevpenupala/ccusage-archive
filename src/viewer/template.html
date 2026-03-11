@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ccusage Archive Viewer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 2rem;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+    .summary { color: #888; font-size: 0.9rem; margin-bottom: 2rem; }
+    .empty-state {
+      text-align: center;
+      color: #666;
+      padding: 4rem 1rem;
+      font-size: 1.1rem;
+    }
+    .empty-state code {
+      background: #2a2a3e;
+      padding: 0.2em 0.5em;
+      border-radius: 4px;
+      font-size: 0.95em;
+    }
+
+    /* Bar chart */
+    .chart { display: flex; align-items: flex-end; gap: 6px; margin-bottom: 2rem; height: 180px; }
+    .chart-bar {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      height: 100%;
+    }
+    .chart-bar .bar {
+      width: 100%;
+      background: #4a6fa5;
+      border-radius: 3px 3px 0 0;
+      min-height: 2px;
+      transition: background 0.15s;
+    }
+    .chart-bar .bar:hover { background: #6a8fc5; }
+    .chart-bar .bar-label {
+      font-size: 0.65rem;
+      color: #888;
+      margin-top: 4px;
+      white-space: nowrap;
+    }
+    .chart-bar .bar-value {
+      font-size: 0.65rem;
+      color: #aaa;
+      margin-bottom: 3px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+    }
+
+    /* Table */
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      text-align: left;
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid #333;
+      font-size: 0.8rem;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    th.num, td.num {
+      text-align: right;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.85rem;
+    }
+    td {
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid #252540;
+    }
+    tr.month-row { cursor: pointer; }
+    tr.month-row:hover { background: #22223a; }
+    .chevron {
+      display: inline-block;
+      width: 1em;
+      text-align: center;
+      color: #555;
+      transition: transform 0.15s;
+      font-size: 0.75rem;
+    }
+    .chevron.open { transform: rotate(90deg); }
+    tr.detail-row { display: none; }
+    tr.detail-row.open { display: table-row; }
+    tr.detail-row td {
+      padding: 0.3rem 0.75rem 0.3rem 2.5rem;
+      color: #999;
+      font-size: 0.8rem;
+      border-bottom: 1px solid #1e1e35;
+    }
+    tr.detail-row td.num { font-family: 'SF Mono', 'Fira Code', monospace; }
+    tr.totals-row td {
+      border-top: 2px solid #333;
+      font-weight: 600;
+      padding-top: 0.75rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>ccusage Archive</h1>
+  <div class="summary" id="summary"></div>
+  <div id="chart" class="chart"></div>
+  <div id="content"></div>
+
+  <script>
+    // DATA is injected by the build script from local JSON snapshots.
+    // This file is generated locally and opened via file:// — no user input involved.
+    const DATA = [/*__DATA__*/];
+
+    function formatCost(n) {
+      return `$${n.toFixed(2)}`;
+    }
+
+    function formatTokens(n) {
+      if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+      if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+      if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+      return String(n);
+    }
+
+    function toggleDetail(i) {
+      const rows = document.querySelectorAll(`.detail-group-${i}`);
+      const chevron = document.getElementById(`chevron-${i}`);
+      const isOpen = chevron.classList.contains('open');
+      for (let r = 0; r < rows.length; r++) {
+        rows[r].classList.toggle('open', !isOpen);
+      }
+      chevron.classList.toggle('open', !isOpen);
+    }
+
+    function render() {
+      if (DATA.length === 0) {
+        document.getElementById('summary').textContent = '';
+        document.getElementById('chart').style.display = 'none';
+        const el = document.getElementById('content');
+        const div = document.createElement('div');
+        div.className = 'empty-state';
+        div.textContent = 'No snapshots found. Run ';
+        const code = document.createElement('code');
+        code.textContent = 'npm start';
+        div.appendChild(code);
+        div.appendChild(document.createTextNode(' to capture data.'));
+        el.appendChild(div);
+        return;
+      }
+
+      let totalCost = 0;
+      let totalTokens = 0;
+      for (let i = 0; i < DATA.length; i++) {
+        totalCost += DATA[i].totalCost;
+        totalTokens += DATA[i].totalTokens;
+      }
+
+      document.getElementById('summary').textContent =
+        `${DATA.length} month${DATA.length !== 1 ? 's' : ''} \u2014 ${formatCost(totalCost)} total`;
+
+      // Chart
+      let maxCost = 0;
+      for (let i = 0; i < DATA.length; i++) {
+        if (DATA[i].totalCost > maxCost) maxCost = DATA[i].totalCost;
+      }
+      const chartEl = document.getElementById('chart');
+      for (let i = 0; i < DATA.length; i++) {
+        const pct = maxCost > 0 ? (DATA[i].totalCost / maxCost) * 100 : 0;
+        const barWrap = document.createElement('div');
+        barWrap.className = 'chart-bar';
+
+        const barValue = document.createElement('span');
+        barValue.className = 'bar-value';
+        barValue.textContent = formatCost(DATA[i].totalCost);
+        barWrap.appendChild(barValue);
+
+        const bar = document.createElement('div');
+        bar.className = 'bar';
+        bar.style.height = `${Math.max(pct, 1)}%`;
+        barWrap.appendChild(bar);
+
+        const barLabel = document.createElement('span');
+        barLabel.className = 'bar-label';
+        barLabel.textContent = DATA[i].month;
+        barWrap.appendChild(barLabel);
+
+        chartEl.appendChild(barWrap);
+      }
+
+      // Table (newest first)
+      const sorted = DATA.slice().reverse();
+      const table = document.createElement('table');
+      const thead = document.createElement('thead');
+      const headerRow = document.createElement('tr');
+      const headers = ['', 'Month', 'Cost', 'Tokens', 'Models'];
+      const numCols = [false, false, true, true, true];
+      for (let h = 0; h < headers.length; h++) {
+        const th = document.createElement('th');
+        th.textContent = headers[h];
+        if (numCols[h]) th.className = 'num';
+        headerRow.appendChild(th);
+      }
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
+      for (let i = 0; i < sorted.length; i++) {
+        const d = sorted[i];
+        const tr = document.createElement('tr');
+        tr.className = 'month-row';
+        tr.onclick = () => { toggleDetail(i); };
+
+        const tdChev = document.createElement('td');
+        const chevSpan = document.createElement('span');
+        chevSpan.className = 'chevron';
+        chevSpan.id = `chevron-${i}`;
+        chevSpan.textContent = '\u25B6';
+        tdChev.appendChild(chevSpan);
+        tr.appendChild(tdChev);
+
+        const tdMonth = document.createElement('td');
+        tdMonth.textContent = d.month;
+        tr.appendChild(tdMonth);
+
+        const tdCost = document.createElement('td');
+        tdCost.className = 'num';
+        tdCost.textContent = formatCost(d.totalCost);
+        tr.appendChild(tdCost);
+
+        const tdTokens = document.createElement('td');
+        tdTokens.className = 'num';
+        tdTokens.textContent = formatTokens(d.totalTokens);
+        tr.appendChild(tdTokens);
+
+        const tdModels = document.createElement('td');
+        tdModels.className = 'num';
+        tdModels.textContent = String(d.models.length);
+        tr.appendChild(tdModels);
+
+        tbody.appendChild(tr);
+
+        for (let j = 0; j < d.models.length; j++) {
+          const m = d.models[j];
+          const dtr = document.createElement('tr');
+          dtr.className = `detail-row detail-group-${i}`;
+
+          const dtdEmpty = document.createElement('td');
+          dtr.appendChild(dtdEmpty);
+
+          const dtdName = document.createElement('td');
+          dtdName.textContent = m.name;
+          dtr.appendChild(dtdName);
+
+          const dtdCost = document.createElement('td');
+          dtdCost.className = 'num';
+          dtdCost.textContent = formatCost(m.cost);
+          dtr.appendChild(dtdCost);
+
+          const dtdTokens = document.createElement('td');
+          dtdTokens.className = 'num';
+          dtdTokens.textContent = formatTokens(
+            m.inputTokens + m.outputTokens + m.cacheCreationTokens + m.cacheReadTokens
+          );
+          dtr.appendChild(dtdTokens);
+
+          const dtdBlank = document.createElement('td');
+          dtr.appendChild(dtdBlank);
+
+          tbody.appendChild(dtr);
+        }
+      }
+
+      // Totals row
+      const totalsRow = document.createElement('tr');
+      totalsRow.className = 'totals-row';
+
+      const ttdEmpty = document.createElement('td');
+      totalsRow.appendChild(ttdEmpty);
+
+      const ttdLabel = document.createElement('td');
+      ttdLabel.textContent = 'Total';
+      totalsRow.appendChild(ttdLabel);
+
+      const ttdCost = document.createElement('td');
+      ttdCost.className = 'num';
+      ttdCost.textContent = formatCost(totalCost);
+      totalsRow.appendChild(ttdCost);
+
+      const ttdTokens = document.createElement('td');
+      ttdTokens.className = 'num';
+      ttdTokens.textContent = formatTokens(totalTokens);
+      totalsRow.appendChild(ttdTokens);
+
+      const ttdBlank = document.createElement('td');
+      totalsRow.appendChild(ttdBlank);
+
+      tbody.appendChild(totalsRow);
+      table.appendChild(tbody);
+
+      document.getElementById('content').appendChild(table);
+    }
+
+    render();
+  </script>
+</body>
+</html>

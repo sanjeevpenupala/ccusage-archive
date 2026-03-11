@@ -79,9 +79,8 @@ describe('captureMonth', () => {
 
   it('writes snapshot file when ccusage returns valid data', async () => {
     const mockData = {
-      type: 'monthly',
-      data: [{ month: '2025-01', totalTokens: 1000, costUSD: 5.0 }],
-      summary: { totalTokens: 1000, totalCostUSD: 5.0 },
+      monthly: [{ month: '2025-01', totalTokens: 1000, totalCost: 5.0 }],
+      totals: { totalTokens: 1000, totalCost: 5.0 },
     };
 
     const result = await captureMonth('2025-01', tmpDir, () =>
@@ -103,7 +102,7 @@ describe('captureMonth', () => {
   });
 
   it('returns failure when ccusage returns empty data array', async () => {
-    const mockData = { type: 'monthly', data: [], summary: {} };
+    const mockData = { monthly: [], totals: {} };
 
     const result = await captureMonth('2025-01', tmpDir, () =>
       Promise.resolve({ exitCode: 0, stdout: JSON.stringify(mockData) }),
@@ -124,9 +123,8 @@ describe('captureMonth', () => {
   it('creates data directory if it does not exist', async () => {
     const nestedDir = path.join(tmpDir, 'nested', 'dir');
     const mockData = {
-      type: 'monthly',
-      data: [{ month: '2025-01' }],
-      summary: {},
+      monthly: [{ month: '2025-01' }],
+      totals: {},
     };
 
     const result = await captureMonth('2025-01', nestedDir, () =>
@@ -143,9 +141,8 @@ describe('captureMonth', () => {
     const badDir = path.join(blockerFile, 'subdir');
 
     const mockData = {
-      type: 'monthly',
-      data: [{ month: '2025-01' }],
-      summary: {},
+      monthly: [{ month: '2025-01' }],
+      totals: {},
     };
 
     const result = await captureMonth('2025-01', badDir, () =>

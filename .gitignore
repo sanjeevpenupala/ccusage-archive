@@ -145,3 +145,6 @@ dist
 
 # Snapshot data (user-specific)
 data/
+
+# Superpowers brainstorm artifacts
+.superpowers/
