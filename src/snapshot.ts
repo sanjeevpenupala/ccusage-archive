@@ -70,9 +70,9 @@ export async function captureMonth(
   if (
     typeof parsed !== 'object' ||
     parsed === null ||
-    !('data' in parsed) ||
-    !Array.isArray((parsed as Record<string, unknown>).data) ||
-    ((parsed as Record<string, unknown>).data as unknown[]).length === 0
+    !('monthly' in parsed) ||
+    !Array.isArray((parsed as Record<string, unknown>).monthly) ||
+    ((parsed as Record<string, unknown>).monthly as unknown[]).length === 0
   ) {
     return { success: false, month, reason: 'ccusage returned empty data (past retention?)' };
   }
