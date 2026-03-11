@@ -12,7 +12,9 @@
     "test": "vitest run",
     "check": "biome check --write",
     "check:ci": "biome ci",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "viewer:build": "tsx scripts/build-viewer.ts",
+    "viewer": "npm run viewer:build && open data/viewer.html"
   },
   "license": "MIT",
   "devDependencies": {
