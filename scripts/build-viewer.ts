@@ -59,3 +59,43 @@ export function normalizeSnapshot(raw: unknown): NormalizedMonth | null {
     models,
   };
 }
+
+export function buildViewer(dataDir: string, templatePath: string, outputPath: string): void {
+  const files = fs.readdirSync(dataDir).filter((f) => f.endsWith('.json'));
+
+  const months: NormalizedMonth[] = [];
+
+  for (const file of files) {
+    const filePath = path.join(dataDir, file);
+    let raw: unknown;
+    try {
+      raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    } catch {
+      console.warn(`Skipping invalid JSON: ${file}`);
+      continue;
+    }
+
+    const normalized = normalizeSnapshot(raw);
+    if (normalized) {
+      months.push(normalized);
+    }
+  }
+
+  months.sort((a, b) => a.month.localeCompare(b.month));
+
+  const template = fs.readFileSync(templatePath, 'utf-8');
+  const output = template.replace('[/*__DATA__*/]', JSON.stringify(months));
+  fs.writeFileSync(outputPath, output, 'utf-8');
+}
+
+const isMainModule = process.argv[1]?.endsWith('build-viewer.ts');
+if (isMainModule) {
+  const dataDir = process.env.CCUSAGE_ARCHIVE_DIR
+    ? path.resolve(process.env.CCUSAGE_ARCHIVE_DIR)
+    : path.resolve('data');
+  const templatePath = path.resolve('src/viewer/template.html');
+  const outputPath = path.join(dataDir, 'viewer.html');
+
+  buildViewer(dataDir, templatePath, outputPath);
+  console.log(`Viewer built: ${outputPath}`);
+}
