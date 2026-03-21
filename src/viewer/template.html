@@ -262,9 +262,9 @@
 
     <div class="controls">
       <div class="toggle" id="granularity">
-        <button type="button" class="active" data-view="daily">Daily</button>
+        <button type="button" data-view="daily">Daily</button>
         <button type="button" data-view="weekly">Weekly</button>
-        <button type="button" data-view="monthly">Monthly</button>
+        <button type="button" class="active" data-view="monthly">Monthly</button>
       </div>
     </div>
 
@@ -732,7 +732,7 @@
     }
 
     // Main render
-    let currentView = 'daily';
+    let currentView = 'monthly';
 
     function renderAll() {
       if (DATA.length === 0) {
