@@ -1,47 +1,38 @@
+import path from 'node:path';
+import { loadArchive, mergeDays, saveArchive } from './archive.js';
+import { captureDailyUsage } from './capture.js';
 import { getConfig } from './config.js';
-import { getMissingMonths, getMonthRange } from './months.js';
-import { captureMonth, getExistingSnapshots } from './snapshot.js';
 
-async function main(): Promise<void> {
-  const config = getConfig();
-  const now = new Date();
-
-  console.log(`[ccusage-archive] Starting snapshot check...`);
-  console.log(`[ccusage-archive] Data directory: ${config.dataDir}`);
-
-  const range = getMonthRange(now);
-  if (range.length === 0) {
-    console.log('[ccusage-archive] No months in retention window to check.');
-    return;
-  }
-
-  console.log(`[ccusage-archive] Checking months: ${range.join(', ')}`);
-
-  const existing = getExistingSnapshots(config.dataDir);
-  const missing = getMissingMonths(range, existing);
-
-  if (missing.length === 0) {
-    console.log('[ccusage-archive] All months within retention window are captured.');
-    return;
-  }
-
-  console.log(`[ccusage-archive] Missing months: ${missing.join(', ')}`);
-
-  for (const month of missing) {
-    console.log(`[ccusage-archive] Capturing ${month}...`);
-    const result = await captureMonth(month, config.dataDir);
-
-    if (result.success) {
-      console.log(`[ccusage-archive] Saved ${month}.json`);
-    } else {
-      console.warn(`[ccusage-archive] Skipping ${month}: ${result.reason}`);
-    }
-  }
-
-  console.log('[ccusage-archive] Done.');
+function log(msg: string): void {
+  console.log(`[ccusage-archive] ${msg}`);
 }
 
-main().catch((error: unknown) => {
-  console.error('[ccusage-archive] Fatal error:', error);
-  process.exit(1);
+async function main(): Promise<void> {
+  const { dataDir } = getConfig();
+  const archivePath = path.join(dataDir, 'archive.json');
+
+  log('Loading archive...');
+  const archive = loadArchive(archivePath);
+  log(`Archive has ${archive.days.length} days`);
+
+  log('Capturing daily usage from ccusage...');
+  const captured = await captureDailyUsage();
+  log(`Captured ${captured.length} days from ccusage`);
+
+  const merged = mergeDays(archive.days, captured);
+  const newDays = merged.length - archive.days.length;
+
+  if (newDays > 0) {
+    saveArchive(archivePath, { version: 1, days: merged });
+    log(`Added ${newDays} new day${newDays !== 1 ? 's' : ''} to archive`);
+  } else {
+    log('No new days to add');
+  }
+
+  log(`Archive now has ${merged.length} days`);
+}
+
+main().catch((err: unknown) => {
+  console.error('[ccusage-archive] Fatal:', err);
+  process.exitCode = 1;
 });
