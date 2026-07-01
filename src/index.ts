@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { loadArchive, mergeDays, saveArchive } from './archive.js';
-import { captureDailyUsage } from './capture.js';
+import { loadArchive, mergeBlocks, mergeDays, mergeWeeks, saveArchive } from './archive.js';
+import { captureDailyUsage, captureSessionBlocks, captureWeeklyUsage } from './capture.js';
 import { getConfig } from './config.js';
 
 function log(msg: string): void {
@@ -19,17 +19,32 @@ async function main(): Promise<void> {
   const captured = await captureDailyUsage();
   log(`Captured ${captured.length} days from ccusage`);
 
-  const merged = mergeDays(archive.days, captured);
-  const newDays = merged.length - archive.days.length;
+  log('Capturing session blocks and weekly totals...');
+  const capturedBlocks = await captureSessionBlocks();
+  const capturedWeeks = await captureWeeklyUsage();
+  log(`Captured ${capturedBlocks.length} completed blocks, ${capturedWeeks.length} weeks`);
 
-  if (newDays > 0) {
-    saveArchive(archivePath, { version: 1, days: merged });
-    log(`Added ${newDays} new day${newDays !== 1 ? 's' : ''} to archive`);
-  } else {
-    log('No new days to add');
-  }
+  const mergedDays = mergeDays(archive.days, captured);
+  const mergedBlocks = mergeBlocks(archive.blocks, capturedBlocks);
+  const mergedWeeks = mergeWeeks(archive.weeks, capturedWeeks);
 
-  log(`Archive now has ${merged.length} days`);
+  const newDays = mergedDays.length - archive.days.length;
+  const newBlocks = mergedBlocks.length - archive.blocks.length;
+
+  // Weekly totals for the current week keep changing, so always persist.
+  saveArchive(archivePath, {
+    version: 2,
+    days: mergedDays,
+    blocks: mergedBlocks,
+    weeks: mergedWeeks,
+  });
+  log(
+    `Added ${newDays} new day${newDays !== 1 ? 's' : ''}, ${newBlocks} new block${newBlocks !== 1 ? 's' : ''}`,
+  );
+
+  log(
+    `Archive now has ${mergedDays.length} days, ${mergedBlocks.length} blocks, ${mergedWeeks.length} weeks`,
+  );
 }
 
 main().catch((err: unknown) => {

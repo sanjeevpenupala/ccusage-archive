@@ -258,6 +258,14 @@
       <p class="subtitle" id="subtitle"></p>
     </header>
 
+    <div class="controls" style="justify-content:flex-start;margin-bottom:1.25rem">
+      <div class="toggle" id="mainTabs">
+        <button type="button" class="active" data-tab="usage">Usage</button>
+        <button type="button" data-tab="sessions">Sessions</button>
+      </div>
+    </div>
+
+    <div id="usagePanel">
     <div class="stats" id="stats"></div>
 
     <div class="controls">
@@ -291,11 +299,38 @@
     <div class="empty-state" id="emptyState" style="display:none">
       No data yet. Run <code>npm start</code> to capture usage.
     </div>
+    </div><!-- /usagePanel -->
+
+    <div id="sessionsPanel" style="display:none">
+      <p class="subtitle" id="sessionSubtitle" style="margin-bottom:1.5rem"></p>
+      <div class="stats" id="sessionStats"></div>
+      <div class="chart-section">
+        <h2>Session start times &middot; local hour</h2>
+        <div class="chart-wrap"><canvas id="startHourChart"></canvas></div>
+      </div>
+      <div class="chart-section">
+        <h2>Tokens per session &middot; vs peak</h2>
+        <div class="chart-wrap"><canvas id="blockTokenChart"></canvas></div>
+      </div>
+      <div class="chart-section">
+        <h2>Burn rate &middot; tokens per min</h2>
+        <div class="chart-wrap"><canvas id="burnChart"></canvas></div>
+      </div>
+      <div class="table-section">
+        <h2>Recent sessions</h2>
+        <div id="sessionTableContainer"></div>
+      </div>
+      <div class="empty-state" id="sessionEmpty" style="display:none">
+        No session data yet. Run <code>npm start</code> to capture blocks.
+      </div>
+    </div>
   </div>
 
   <script>/*__CHARTJS__*/</script>
   <script>
     const DATA = [/*__DATA__*/];
+    const BLOCKS = [/*__BLOCKS__*/];
+    const WEEKS = [/*__WEEKS__*/];
 
     const MODEL_COLORS = [
       '#4a6fa5', '#6a8fc5', '#3d5a80', '#8ab0d6', '#2c4a6e',
@@ -764,9 +799,218 @@
       renderTable(periods);
     });
 
+    // ---- Sessions (5-hour blocks) ----
+    let sessionsRendered = false;
+    let startHourChart, blockTokenChart, burnChart;
+
+    function pad2(n) { return String(n).padStart(2, '0'); }
+    function localDateKey(iso) {
+      const d = new Date(iso);
+      return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    }
+    function blockDurationMin(b) {
+      return Math.max((new Date(b.actualEndTime) - new Date(b.startTime)) / 60000, 1);
+    }
+    function blockBurn(b) { return b.totalTokens / blockDurationMin(b); }
+    function hasOpus(b) { return b.models.some((m) => m.toLowerCase().includes('opus')); }
+    function blockLabel(b) {
+      const d = new Date(b.startTime);
+      return `${pad2(d.getMonth() + 1)}/${pad2(d.getDate())} ${pad2(d.getHours())}:00`;
+    }
+
+    function destroySessionCharts() {
+      if (startHourChart) { startHourChart.destroy(); startHourChart = null; }
+      if (blockTokenChart) { blockTokenChart.destroy(); blockTokenChart = null; }
+      if (burnChart) { burnChart.destroy(); burnChart = null; }
+    }
+
+    function renderSessionSubtitle() {
+      const el = document.getElementById('sessionSubtitle');
+      if (BLOCKS.length === 0) { el.textContent = ''; return; }
+      const first = localDateKey(BLOCKS[0].startTime);
+      const last = localDateKey(BLOCKS[BLOCKS.length - 1].startTime);
+      let wk = '';
+      if (WEEKS.length > 0) {
+        const peakWk = WEEKS.reduce((m, w) => Math.max(m, w.totalTokens), 0);
+        const cur = WEEKS[WEEKS.length - 1];
+        wk = ` · peak week ${formatTokens(peakWk)} · latest week ${formatTokens(cur.totalTokens)}`;
+      }
+      el.textContent = `${BLOCKS.length} sessions · ${first} – ${last}${wk}`;
+    }
+
+    function renderSessionStats() {
+      const el = document.getElementById('sessionStats');
+      clearElement(el);
+      const days = new Set(BLOCKS.map((b) => localDateKey(b.startTime)));
+      const avg = days.size ? BLOCKS.length / days.size : 0;
+      const peak = BLOCKS.reduce((m, b) => Math.max(m, b.totalTokens), 0);
+      const hits = BLOCKS.filter((b) => b.usageLimitResetTime).length;
+      const items = [
+        { value: String(BLOCKS.length), label: 'Sessions' },
+        { value: avg.toFixed(1), label: 'Avg / Day' },
+        { value: formatTokens(peak), label: 'Peak Session' },
+        { value: String(hits), label: 'Cap Hits' },
+      ];
+      for (let i = 0; i < items.length; i++) {
+        const div = document.createElement('div');
+        div.className = 'stat';
+        const val = document.createElement('div');
+        val.className = 'stat-value';
+        val.textContent = items[i].value;
+        const lab = document.createElement('div');
+        lab.className = 'stat-label';
+        lab.textContent = items[i].label;
+        div.appendChild(val);
+        div.appendChild(lab);
+        el.appendChild(div);
+      }
+    }
+
+    function renderSessionCharts() {
+      destroySessionCharts();
+      const colors = chartColors();
+      const labels = BLOCKS.map(blockLabel);
+      const peak = BLOCKS.reduce((m, b) => Math.max(m, b.totalTokens), 0);
+
+      // First session of each day, bucketed by local hour
+      const firstByDay = {};
+      for (const b of BLOCKS) {
+        const k = localDateKey(b.startTime);
+        const t = new Date(b.startTime).getTime();
+        if (!(k in firstByDay) || t < firstByDay[k].t) {
+          firstByDay[k] = { t: t, hour: new Date(b.startTime).getHours() };
+        }
+      }
+      const hourCounts = new Array(24).fill(0);
+      for (const k in firstByDay) hourCounts[firstByDay[k].hour]++;
+      const hourOpts = baseChartOptions(colors);
+      hourOpts.scales.y.ticks.callback = (v) => (Number.isInteger(v) ? v : '');
+      hourOpts.plugins.tooltip.callbacks = { label: (c) => `${c.parsed.y} day${c.parsed.y !== 1 ? 's' : ''}` };
+      startHourChart = new Chart(document.getElementById('startHourChart'), {
+        type: 'bar',
+        data: {
+          labels: hourCounts.map((_, h) => `${pad2(h)}:00`),
+          datasets: [{ data: hourCounts, backgroundColor: '#4a6fa5', borderRadius: 2, maxBarThickness: 24 }],
+        },
+        options: hourOpts,
+      });
+
+      // Tokens per session, colored by whether Opus ran, with a peak reference line
+      const tokOpts = baseChartOptions(colors);
+      tokOpts.scales.y.ticks.callback = (v) => formatTokens(v);
+      tokOpts.plugins.tooltip.callbacks = {
+        label: (c) => {
+          const b = BLOCKS[c.dataIndex];
+          const pct = peak ? Math.round((b.totalTokens / peak) * 100) : 0;
+          return `${formatTokens(b.totalTokens)} · ${pct}% of peak · ${b.models.join(', ') || '—'}`;
+        },
+      };
+      tokOpts.plugins.legend = {
+        display: true, position: 'top', align: 'end',
+        labels: { color: colors.text, font: { size: 10 }, boxWidth: 10, padding: 12 },
+      };
+      blockTokenChart = new Chart(document.getElementById('blockTokenChart'), {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [
+            { label: 'Tokens', data: BLOCKS.map((b) => b.totalTokens), backgroundColor: BLOCKS.map((b) => (hasOpus(b) ? '#4a6fa5' : '#7da3c8')), borderRadius: 1, maxBarThickness: 18, order: 2 },
+            { label: 'Peak', type: 'line', data: BLOCKS.map(() => peak), borderColor: '#8ab0d6', borderWidth: 1, borderDash: [4, 4], pointRadius: 0, fill: false, order: 1 },
+          ],
+        },
+        options: tokOpts,
+      });
+
+      // Burn rate per session
+      const burnOpts = baseChartOptions(colors);
+      burnOpts.scales.y.ticks.callback = (v) => formatTokens(v);
+      burnOpts.plugins.tooltip.callbacks = { label: (c) => `${formatTokens(Math.round(c.parsed.y))} tok/min` };
+      burnChart = new Chart(document.getElementById('burnChart'), {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{ data: BLOCKS.map(blockBurn), backgroundColor: '#3d5a80', borderRadius: 1, maxBarThickness: 18 }],
+        },
+        options: burnOpts,
+      });
+    }
+
+    function renderSessionTable() {
+      const container = document.getElementById('sessionTableContainer');
+      clearElement(container);
+      const peak = BLOCKS.reduce((m, b) => Math.max(m, b.totalTokens), 0);
+      const rows = BLOCKS.slice().reverse().slice(0, 40);
+
+      const table = document.createElement('table');
+      const thead = document.createElement('thead');
+      const hr = document.createElement('tr');
+      const cols = [
+        { t: 'Start (local)', c: '' }, { t: 'Dur', c: 'num' }, { t: 'Tokens', c: 'num' },
+        { t: '% Peak', c: 'num' }, { t: 'Tok/min', c: 'num' }, { t: 'Models', c: '' }, { t: 'Hit', c: 'num' },
+      ];
+      for (const col of cols) {
+        const th = document.createElement('th');
+        th.textContent = col.t;
+        if (col.c) th.className = col.c;
+        hr.appendChild(th);
+      }
+      thead.appendChild(hr);
+      table.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
+      for (const b of rows) {
+        const tr = document.createElement('tr');
+        const d = new Date(b.startTime);
+        const cells = [
+          { t: `${pad2(d.getMonth() + 1)}/${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`, c: 'period-cell' },
+          { t: `${Math.round(blockDurationMin(b))}m`, c: 'num' },
+          { t: formatTokens(b.totalTokens), c: 'num' },
+          { t: `${peak ? Math.round((b.totalTokens / peak) * 100) : 0}%`, c: 'num' },
+          { t: formatTokens(Math.round(blockBurn(b))), c: 'num' },
+          { t: b.models.join(', ') || '—', c: '' },
+          { t: b.usageLimitResetTime ? '⚠' : '', c: 'num' },
+        ];
+        for (const cell of cells) {
+          const td = document.createElement('td');
+          td.textContent = cell.t;
+          if (cell.c) td.className = cell.c;
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      container.appendChild(table);
+    }
+
+    function renderSessions() {
+      if (BLOCKS.length === 0) {
+        document.getElementById('sessionEmpty').style.display = '';
+        return;
+      }
+      renderSessionSubtitle();
+      renderSessionStats();
+      renderSessionCharts();
+      renderSessionTable();
+      sessionsRendered = true;
+    }
+
+    // Top-level tab switch (Usage / Sessions)
+    document.getElementById('mainTabs').addEventListener('click', function(e) {
+      const btn = e.target.closest('button');
+      if (!btn || !btn.dataset.tab) return;
+      const tab = btn.dataset.tab;
+      const buttons = this.querySelectorAll('button');
+      for (let i = 0; i < buttons.length; i++) buttons[i].classList.toggle('active', buttons[i] === btn);
+      document.getElementById('usagePanel').style.display = tab === 'usage' ? '' : 'none';
+      document.getElementById('sessionsPanel').style.display = tab === 'sessions' ? '' : 'none';
+      // Charts must render while their canvas is visible, so defer sessions to first view.
+      if (tab === 'sessions' && !sessionsRendered) renderSessions();
+    });
+
     // Theme change — redraw charts
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
       if (DATA.length > 0) renderCharts(getAggregated(currentView));
+      if (sessionsRendered) renderSessionCharts();
     });
 
     renderAll();
