@@ -1,11 +1,18 @@
 # ccusage Archive
 
-ccusage Archive persists Claude Code usage data beyond the 30-day retention
-limit of the underlying Anthropic API logs. On every system boot, it runs
-`ccusage monthly --json` for each calendar month within the retention window
-that does not yet have a local snapshot, and writes the result to a JSON file
-in a configurable data directory. Because the tool is idempotent (it skips
-months that already have a file), repeated runs are safe.
+ccusage Archive persists Claude Code usage data beyond the ~30-day retention
+limit of the underlying Anthropic logs. On every run it reads your local usage
+through the `ccusage` data-loader and merges any new records into a single
+`archive.json`:
+
+- **Daily** token and cost totals, with a per-model breakdown.
+- **Session blocks** — the completed 5-hour windows that usage limits reset on,
+  including whether each one hit a limit.
+- **Weekly** totals, for the separate weekly cap.
+
+Merges are idempotent — recorded days and blocks are never overwritten — so
+repeated runs are safe and history accumulates past the point where the raw
+logs age out.
 
 ## Prerequisites
 
@@ -75,40 +82,51 @@ pm2 logs ccusage-archive
 
 ## How It Works
 
-On startup the tool:
+On each run the tool:
 
-1. Computes the retention window (today minus 30 days) to determine which
-   completed calendar months could still be queried from ccusage.
-2. Reads `./data/` (or `CCUSAGE_ARCHIVE_DIR`) to find which months already
-   have a snapshot file.
-3. For each missing month, shells out to `npx --yes ccusage@latest monthly
-   --json --since <YYYYMMDD> --until <YYYYMMDD>` and writes the output to
-   `<month>.json`.
-4. Skips months where ccusage returns an empty data array (data has already
-   rolled out of retention).
+1. Loads the existing `archive.json` (or starts empty).
+2. Captures current usage from the ccusage data-loader: daily aggregates
+   (`loadDailyUsageData`), completed session blocks (`loadSessionBlockData`,
+   skipping gaps and the still-active block), and weekly totals
+   (`loadWeeklyUsageData`).
+3. Merges into the archive. Days and blocks are immutable once recorded
+   (existing wins); the in-progress week is refreshed on every run.
+4. Writes the merged archive back atomically.
+
+Run `npm run viewer:build` to (re)generate `data/viewer.html` — a
+self-contained dashboard with two tabs: **Usage** (cost, tokens, and models
+over time) and **Sessions** (start-hour histogram, tokens vs. peak, burn rate,
+and a cap-hit counter).
 
 ## Data Format
 
-Each snapshot file contains the JSON output from ccusage, which looks like:
+A single `archive.json` holds the full history:
 
 ```json
 {
-  "type": "monthly",
-  "data": [
+  "version": 2,
+  "days": [
+    { "date": "2026-06-30", "totalTokens": 1000, "totalCost": 5.0, "models": [] }
+  ],
+  "blocks": [
     {
-      "month": "2025-01",
+      "id": "2026-06-30T12:00:00.000Z",
+      "startTime": "2026-06-30T12:00:00.000Z",
+      "actualEndTime": "2026-06-30T14:11:00.000Z",
       "totalTokens": 1000,
-      "costUSD": 5.00
+      "totalCost": 5.0,
+      "models": ["opus-4-6"],
+      "usageLimitResetTime": null
     }
   ],
-  "summary": {
-    "totalTokens": 1000,
-    "totalCostUSD": 5.00
-  }
+  "weeks": [
+    { "week": "2026-06-29", "totalTokens": 1000, "totalCost": 5.0, "models": [] }
+  ]
 }
 ```
 
-Files are named `YYYY-MM.json` and stored flat in the data directory.
+`blocks` are the 5-hour session-limit windows; `usageLimitResetTime` is
+non-null only for a block that actually hit a limit.
 
 ## Contributing
 

@@ -8,14 +8,20 @@ export function buildViewer(
   outputPath: string,
 ): void {
   const archive = fs.existsSync(archivePath)
-    ? (JSON.parse(fs.readFileSync(archivePath, 'utf-8')) as { days: unknown[] })
-    : { days: [] };
+    ? (JSON.parse(fs.readFileSync(archivePath, 'utf-8')) as {
+        days: unknown[];
+        blocks?: unknown[];
+        weeks?: unknown[];
+      })
+    : { days: [], blocks: [], weeks: [] };
 
   const chartJs = fs.readFileSync(chartJsPath, 'utf-8');
   const template = fs.readFileSync(templatePath, 'utf-8');
 
   const output = template
-    .replace('[/*__DATA__*/]', JSON.stringify(archive.days))
+    .replace('[/*__DATA__*/]', JSON.stringify(archive.days ?? []))
+    .replace('[/*__BLOCKS__*/]', JSON.stringify(archive.blocks ?? []))
+    .replace('[/*__WEEKS__*/]', JSON.stringify(archive.weeks ?? []))
     .replace('/*__CHARTJS__*/', chartJs);
 
   const dir = path.dirname(outputPath);
